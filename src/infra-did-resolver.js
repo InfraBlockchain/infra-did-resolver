@@ -21,9 +21,9 @@ export async function jsonRpcFetchRows(options) {
   return result.rows;
 }
 
-function accountDidDocument(did, controller, controllerKey, history) {
-
-}
+// function accountDidDocument(did, activePubKey, pkDidAttr) {
+//
+// }
 
 function pubkeyDidDocument(did, controllerPubKey, pkDidAttr) {
 
@@ -142,6 +142,64 @@ async function resolvePubKeyDID(did, pubKeyStr) {
   return null
 }
 
+async function resolveAccountDID(did, accountName) {
+  try {
+    const res = await rpc.get_account(accountName);
+    console.log(JSON.stringify(res, null, 3))
+
+    // let ownerKeyStr
+    let activeKeyStr
+    res.permissions.map(perm => {
+      switch (perm.perm_name) {
+        case 'active' : {
+          const ra = perm.required_auth
+          if (ra.threshold === 1 && ra.keys.length === 1 && ra.keys[0].weight === 1) {
+            activeKeyStr = ra.keys[0].key
+          }
+          break
+        }
+        // case 'owner' : {
+        //   const ra = perm.required_auth
+        //   if (ra.threshold === 1 && ra.keys.length === 1 && ra.keys[0].weight === 1) {
+        //     ownerKeyStr = ra.keys[0].key
+        //   }
+        //   break
+        // }
+      }
+    })
+    console.log(`activeKeyStr=${activeKeyStr}`)
+
+    let pubKey = Numeric.stringToPublicKey(activeKeyStr)
+    if (pubKey.type != Numeric.KeyType.k1 /*&& pubKey.type != Numeric.KeyType.r1*/ ) {
+      throw new Error("unsupported public key type")
+    }
+
+    const resAccountDIDAttr = await jsonRpcFetchRows({
+      code: DID_REGISTRY_CONTRACT,
+      scope: DID_REGISTRY_CONTRACT,
+      table: 'accdidattr',
+      index_position: 1,
+      key_type: 'name',
+      lower_bound: accountName,
+      upper_bound: accountName,
+      limit: 1
+    })
+    console.log('resAccountDIDAttr = ' + JSON.stringify(resAccountDIDAttr, null, 3))
+
+    let didAttr = []
+
+    if (resAccountDIDAttr.length > 0) {
+      const didAttrRow = resAccountDIDAttr[0]
+      didAttr = didAttrRow.attr
+    }
+    return pubkeyDidDocument(did, pubKey, didAttr)
+  } catch (e) {
+    console.error(e)
+    return {}
+  }
+}
+
+
 function getResolver(conf = {}) {
 
   async function resolve(did, parsed) {
@@ -159,6 +217,8 @@ function getResolver(conf = {}) {
 
       if (parsed.id.startsWith("PUB_K1_") || parsed.id.startsWith("PUB_R1_") || parsed.id.startsWith("EOS")) {
         didDoc = await resolvePubKeyDID(did, parsed.id)
+      } else {
+        didDoc = await resolveAccountDID(did, parsed.id)
       }
 
 
