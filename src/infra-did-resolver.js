@@ -1,15 +1,9 @@
 import BN from 'bn.js'
 import { Buffer } from 'buffer'
-
-
 import { JsonRpc, Numeric } from 'eosjs'
 import fetch from 'node-fetch'
 
-const DID_REGISTRY_CONTRACT = 'infradidregi'
-
-export const rpc = new JsonRpc("http://localhost:8888", { fetch } );
-
-export async function jsonRpcFetchRows(options) {
+async function jsonRpcFetchRows(rpc, options) {
   const mergedOptions = {
     json: true,
     limit: 9999,
@@ -74,7 +68,7 @@ function pubkeyDidDocument(did, controllerPubKey, pkDidAttr) {
   return doc
 }
 
-async function resolvePubKeyDID(did, pubKeyStr) {
+async function resolvePubKeyDID(did, pubKeyStr, network) {
   try {
     let pubKey = Numeric.stringToPublicKey(pubKeyStr)
     if (pubKey.type != Numeric.KeyType.k1 /*&& pubKey.type != Numeric.KeyType.r1*/ ) {
@@ -97,9 +91,9 @@ async function resolvePubKeyDID(did, pubKeyStr) {
 
     const pubkey_index_256bits = Buffer.from(pubKey.data.slice(1,pubKey.data.length)).toString('hex')
 
-    const resPubKeyDID = await jsonRpcFetchRows({
-      code: DID_REGISTRY_CONTRACT,
-      scope: DID_REGISTRY_CONTRACT,
+    const resPubKeyDID = await jsonRpcFetchRows( network.jsonRpc, {
+      code: network.registryContract, //DID_REGISTRY_CONTRACT,
+      scope: network.registryContract, //DID_REGISTRY_CONTRACT,
       table: 'pubkeydid',
       index_position: 2,
       key_type: 'sha256',
@@ -116,10 +110,10 @@ async function resolvePubKeyDID(did, pubKeyStr) {
       const pubkeyDIDrow = resPubKeyDID[0]
       pkDidAttr = pubkeyDIDrow.attr
 
-      const resPubKeyDIDOwner = await jsonRpcFetchRows({
+      const resPubKeyDIDOwner = await jsonRpcFetchRows( network.jsonRpc, {
         json: true,
-        code: DID_REGISTRY_CONTRACT,
-        scope: DID_REGISTRY_CONTRACT,
+        code: network.registryContract, //DID_REGISTRY_CONTRACT,
+        scope: network.registryContract, //DID_REGISTRY_CONTRACT,
         table: 'pkdidowner',
         index_position: 1,
         key_type: 'i64',
@@ -142,9 +136,9 @@ async function resolvePubKeyDID(did, pubKeyStr) {
   return null
 }
 
-async function resolveAccountDID(did, accountName) {
+async function resolveAccountDID(did, accountName, network) {
   try {
-    const res = await rpc.get_account(accountName);
+    const res = await network.jsonRpc.get_account(accountName);
     console.log(JSON.stringify(res, null, 3))
 
     // let ownerKeyStr
@@ -174,9 +168,9 @@ async function resolveAccountDID(did, accountName) {
       throw new Error("unsupported public key type")
     }
 
-    const resAccountDIDAttr = await jsonRpcFetchRows({
-      code: DID_REGISTRY_CONTRACT,
-      scope: DID_REGISTRY_CONTRACT,
+    const resAccountDIDAttr = await jsonRpcFetchRows( network.jsonRpc, {
+      code: network.registryContract, //DID_REGISTRY_CONTRACT,
+      scope: network.registryContract, //DID_REGISTRY_CONTRACT,
       table: 'accdidattr',
       index_position: 1,
       key_type: 'name',
@@ -199,8 +193,54 @@ async function resolveAccountDID(did, accountName) {
   }
 }
 
+function configureNetwork(conf = {}) {
+  const registryContract = conf.registryContract
+  const jsonRpc = new JsonRpc(conf.rpcEndpoint, { fetch } );
+  return { jsonRpc, registryContract }
+}
+
+function configureNetworks(networksConf = []) {
+  const networks = {}
+  for (let i = 0; i < networksConf.length; i++) {
+    const net = networksConf[i]
+    networks[net.name] = configureNetwork(net)
+    if (networks[net.name] === null) {
+      console.warn(`invalid configuration for ${net.name}`)
+    }
+  }
+  return networks
+}
+
+function validateNetworksAgainstConfig(networks = {}, conf = {}) {
+  if (conf && conf.networks) {
+    for (const expectedNet of conf.networks) {
+      if (!networks[expectedNet.name]) {
+        throw new Error(
+          `Chain network configuration for ${expectedNet.name} was attempted but no valid configuration was provided`
+        )
+      }
+    }
+  }
+
+  let count = 0
+  for (const net of Object.keys(networks)) {
+    if (networks[net] !== null) {
+      count++
+    }
+  }
+
+  if (count === 0) {
+    throw new Error('InfraDIDResolver requires a provider configuration for at least one network')
+  }
+}
 
 function getResolver(conf = {}) {
+
+  const networks = {
+    ...configureNetworks(conf.networks)
+  }
+
+  validateNetworksAgainstConfig(networks, conf)
 
   async function resolve(did, parsed) {
     // const fullId = parsed.id.match(identifierMatcher)
@@ -215,10 +255,22 @@ function getResolver(conf = {}) {
     let didDoc = {}
     try {
 
-      if (parsed.id.startsWith("PUB_K1_") || parsed.id.startsWith("PUB_R1_") || parsed.id.startsWith("EOS")) {
-        didDoc = await resolvePubKeyDID(did, parsed.id)
+      const idSplit = parsed.id.split(':')
+      if (idSplit.length !== 2) {
+        throw new Error(`invalid did, needs network identifier part and id part (${did})`)
+      }
+
+      const network = networks[idSplit[0]]
+      if (!network) {
+        throw new Error(`no chain network configured for network identifier ${idSplit[0]}`)
+      }
+
+      const idInNetwork = idSplit[1]
+
+      if (idInNetwork.startsWith("PUB_K1_") || idInNetwork.startsWith("PUB_R1_") || idInNetwork.startsWith("EOS")) {
+        didDoc = await resolvePubKeyDID(did, idInNetwork, network)
       } else {
-        didDoc = await resolveAccountDID(did, parsed.id)
+        didDoc = await resolveAccountDID(did, idInNetwork, network)
       }
 
 
@@ -266,6 +318,5 @@ function getResolver(conf = {}) {
 }
 
 export {
-  DID_REGISTRY_CONTRACT,
   getResolver,
 }
