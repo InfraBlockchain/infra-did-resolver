@@ -1,4 +1,3 @@
-import BN from 'bn.js'
 import { Buffer } from 'buffer'
 import { JsonRpc, Numeric } from 'eosjs'
 import fetch from 'node-fetch'
@@ -203,9 +202,9 @@ function configureNetworks(networksConf = []) {
   const networks = {}
   for (let i = 0; i < networksConf.length; i++) {
     const net = networksConf[i]
-    networks[net.name] = configureNetwork(net)
-    if (networks[net.name] === null) {
-      console.warn(`invalid configuration for ${net.name}`)
+    networks[net.networkId] = configureNetwork(net)
+    if (networks[net.networkId] === null) {
+      console.warn(`invalid configuration for ${net.networkId}`)
     }
   }
   return networks
@@ -214,9 +213,9 @@ function configureNetworks(networksConf = []) {
 function validateNetworksAgainstConfig(networks = {}, conf = {}) {
   if (conf && conf.networks) {
     for (const expectedNet of conf.networks) {
-      if (!networks[expectedNet.name]) {
+      if (!networks[expectedNet.networkId]) {
         throw new Error(
-          `Chain network configuration for ${expectedNet.name} was attempted but no valid configuration was provided`
+          `Chain network configuration for ${expectedNet.networkId} was attempted but no valid configuration was provided`
         )
       }
     }
