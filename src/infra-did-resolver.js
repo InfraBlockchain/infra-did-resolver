@@ -14,11 +14,7 @@ async function jsonRpcFetchRows(rpc, options) {
   return result.rows;
 }
 
-// function accountDidDocument(did, activePubKey, pkDidAttr) {
-//
-// }
-
-function pubkeyDidDocument(did, controllerPubKey, pkDidAttr) {
+function buildDidDocument(did, controllerPubKey, pkDidAttr) {
 
   const publicKey = [
     {
@@ -73,20 +69,6 @@ async function resolvePubKeyDID(did, pubKeyStr, network) {
     if (pubKey.type != Numeric.KeyType.k1 /*&& pubKey.type != Numeric.KeyType.r1*/ ) {
       throw new Error("unsupported public key type")
     }
-    // console.log(`pubKey=${JSON.stringify(pubKey)}`)
-
-    // console.log(Buffer.from(pubKey.data).toString('hex'));
-    // console.log(Buffer.from(pubKey.data.slice(1,pubKey.data.length)).toString('hex'));
-    // const result = await rpc.get_table_rows({
-    //   json: true,
-    //   code: DID_REGISTRY_CONTRACT,
-    //   scope: DID_REGISTRY_CONTRACT,
-    //   table: 'pubkeydid',
-    //   lower_bound: 1,
-    //   limit: 10
-    // })
-    // //get_table_rows({ json, code, scope, table, lower_bound, upper_bound, index_position, key_type, limit, reverse, show_payer, }: any): Promise<any>;
-    // console.log(JSON.stringify(result, null, 3))
 
     const pubkey_index_256bits = Buffer.from(pubKey.data.slice(1,pubKey.data.length)).toString('hex')
 
@@ -100,7 +82,7 @@ async function resolvePubKeyDID(did, pubKeyStr, network) {
       upper_bound: pubkey_index_256bits,
       limit: 1
     })
-    console.log('resPubKeyDID = ' + JSON.stringify(resPubKeyDID, null, 3))
+    // console.log('resPubKeyDID = ' + JSON.stringify(resPubKeyDID, null, 3))
 
     let pkDidAttr = []
     let ownerPubKey = null
@@ -119,13 +101,13 @@ async function resolvePubKeyDID(did, pubKeyStr, network) {
         lower_bound: pubkeyDIDrow.pkid,
         limit: 1
       })
-      console.log('resPubKeyDIDOwner = ' + JSON.stringify(resPubKeyDIDOwner, null, 3))
+      // console.log('resPubKeyDIDOwner = ' + JSON.stringify(resPubKeyDIDOwner, null, 3))
       if (resPubKeyDIDOwner.length > 0 && resPubKeyDIDOwner[0].pkid == pubkeyDIDrow.pkid) {
         ownerPubKey = Numeric.stringToPublicKey(resPubKeyDIDOwner[0].owner_pk)
       }
     }
 
-    return pubkeyDidDocument(did, ownerPubKey? ownerPubKey : pubKey, pkDidAttr)
+    return buildDidDocument(did, ownerPubKey? ownerPubKey : pubKey, pkDidAttr)
 
   } catch (e) {
     console.error('error')
@@ -138,7 +120,7 @@ async function resolvePubKeyDID(did, pubKeyStr, network) {
 async function resolveAccountDID(did, accountName, network) {
   try {
     const res = await network.jsonRpc.get_account(accountName);
-    console.log(JSON.stringify(res, null, 3))
+    // console.log(JSON.stringify(res, null, 3))
 
     // let ownerKeyStr
     let activeKeyStr
@@ -185,7 +167,7 @@ async function resolveAccountDID(did, accountName, network) {
       const didAttrRow = resAccountDIDAttr[0]
       didAttr = didAttrRow.attr
     }
-    return pubkeyDidDocument(did, pubKey, didAttr)
+    return buildDidDocument(did, pubKey, didAttr)
   } catch (e) {
     console.error(e)
     return {}
@@ -242,15 +224,6 @@ function getResolver(conf = {}) {
   validateNetworksAgainstConfig(networks, conf)
 
   async function resolve(did, parsed) {
-    // const fullId = parsed.id.match(identifierMatcher)
-    // if (!fullId) throw new Error(`Not a valid ethr DID: ${did}`)
-    // const id = fullId[2]
-    // const networkId = !fullId[1] ? 'mainnet' : fullId[1].slice(0, -1)
-    //
-    // if (!networks[networkId]) throw new Error(`No conf for networkId: ${networkId}`)
-    //
-    // const { controller, history, publicKey } = await changeLog(id, networkId)
-    // return wrapDidDocument(did, controller, publicKey, history)
     let didDoc = {}
     try {
 
@@ -271,39 +244,6 @@ function getResolver(conf = {}) {
       } else {
         didDoc = await resolveAccountDID(did, idInNetwork, network)
       }
-
-
-      // let pubKey = Numeric.stringToPublicKey(parsed.id)
-      // if (pubKey.type != Numeric.KeyType.k1 && pubKey.type != Numeric.KeyType.r1 ) {
-      //   throw new Error("unsupported public key type")
-      // }
-      // console.log(Buffer.from(pubKey.data).toString('hex'));
-      // console.log(Buffer.from(pubKey.data.slice(1,pubKey.data.length)).toString('hex'));
-      // const result = await rpc.get_table_rows({
-      //   json: true,
-      //   code: DID_REGISTRY_CONTRACT,
-      //   scope: DID_REGISTRY_CONTRACT,
-      //   table: 'pubkeydid',
-      //   lower_bound: 1,
-      //   limit: 10
-      // })
-      // //get_table_rows({ json, code, scope, table, lower_bound, upper_bound, index_position, key_type, limit, reverse, show_payer, }: any): Promise<any>;
-      // console.log(JSON.stringify(result, null, 3))
-      //
-      // const pubkey_index_256bits = Buffer.from(pubKey.data.slice(1,pubKey.data.length)).toString('hex')
-      //
-      // const result2 = await rpc.get_table_rows({
-      //   json: true,
-      //   code: DID_REGISTRY_CONTRACT,
-      //   scope: DID_REGISTRY_CONTRACT,
-      //   table: 'pubkeydid',
-      //   index_position: 2,
-      //   key_type: 'sha256',
-      //   lower_bound: pubkey_index_256bits,
-      //   upper_bound: pubkey_index_256bits,
-      //   limit: 1
-      // })
-      // console.log(JSON.stringify(result2, null, 3))
 
     } catch (e) {
       console.error(e)
