@@ -7,3 +7,5 @@ coverage
 *.log
 
 *.tgz
+
+resolver_test.mjs
