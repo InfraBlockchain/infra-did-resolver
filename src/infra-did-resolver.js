@@ -21,6 +21,7 @@ function buildDidDocument(did, controllerPubKey, pkDidAttr) {
       id: `${did}#controller`,
       type: 'Secp256k1VerificationKey2018',
       controller: did,
+      // publicKeyBase58: Numeric.binaryToBase58(controllerPubKey.data)
       publicKeyHex: Buffer.from(controllerPubKey.data).toString('hex')
     }
   ]
