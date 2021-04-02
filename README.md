@@ -2,6 +2,15 @@
 
 DIF Javascript DID universal resolver (https://github.com/decentralized-identity/did-resolver) compatible Infra DID resolver
 
+* Infra DID Method Spec
+  https://github.com/InfraBlockchain/infra-did-method-specs/blob/main/docs/Infra-DID-method-spec.md
+
+* Infra DID Registry Smart Contract on InfraBlockchain
+  https://github.com/InfraBlockchain/infra-did-registry
+  
+* Infra DID javascript library
+  https://github.com/InfraBlockchain/infra-did-js
+
 ## Infra DID resolver setup with DIF did-resolver
 
 ```javascript
