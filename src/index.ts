@@ -6,6 +6,9 @@ import {
   verificationMethodTypes,
   Errors,
 } from './typedefs'
+import {
+  ConfigurationOptions
+} from './configuration';
 
 export {
   DEFAULT_REGISTRY_CONTRACT as REGISTRY,
@@ -16,4 +19,5 @@ export {
   legacyAttrTypes as attrTypes,
   verificationMethodTypes,
   Errors,
+  ConfigurationOptions,
 }

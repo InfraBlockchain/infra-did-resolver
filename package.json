@@ -1,6 +1,6 @@
 {
   "name": "infra-did-resolver",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Resolve DID documents for InfraBlockchain DIDs",
   "main": "lib/index.umd.js",
   "source": "src/index.ts",
