@@ -20,6 +20,7 @@ export interface NetworkConfiguration {
 
 export interface MultiNetworkConfiguration {
   networks?: NetworkConfiguration[]
+  noRevocationCheck?: boolean
 }
 
 export type ConfigurationOptions = MultiNetworkConfiguration

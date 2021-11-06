@@ -32,9 +32,15 @@ export function getResolver(options: ConfigurationOptions): Record<string, DIDRe
 
 export class InfraDidResolver {
   private networks: ConfiguredNetworks
+  private noRevocationCheck: boolean
 
   constructor(options: ConfigurationOptions) {
     this.networks = configureResolverWithNetworks(options)
+    if (options.noRevocationCheck) {
+      this.noRevocationCheck = true;
+    } else {
+      this.noRevocationCheck = false;
+    }
   }
 
   async resolve(
@@ -127,7 +133,7 @@ export class InfraDidResolver {
     if (resPubKeyDID.length > 0) {
       const pubkeyDIDrow = resPubKeyDID[0]
       pkDidAttr = pubkeyDIDrow.attr
-      if (pubkeyDIDrow.nonce === INFRA_DID_NONCE_VALUE_FOR_REVOKED_PUB_KEY_DID) {
+      if (!this.noRevocationCheck && pubkeyDIDrow.nonce === INFRA_DID_NONCE_VALUE_FOR_REVOKED_PUB_KEY_DID) {
         deactivated = true
       }
 

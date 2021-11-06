@@ -22,11 +22,12 @@ describe('infra-did-resolver', () => {
         rpcEndpoint: 'http://9aa68844df1f.ngrok.io'
       },
       {
-        networkId: 'vapptest1',
+        networkId: 'sentinel',
         registryContract: 'fmapkumrotfc',
         rpcEndpoint: 'https://api.testnet.eos.io'
       }
-    ]
+    ],
+    noRevocationCheck: false
   }
 
   let infraDidResolver, didResolver
@@ -39,7 +40,7 @@ describe('infra-did-resolver', () => {
 
   describe('Public-Key-based DID', () => {
     it('resolves DID document', async () => {
-      const networkId = 'vapptest1'
+      const networkId = 'sentinel'
       const pubKey = 'PUB_K1_7nxEa8qHEiy34dpuYH4yE2zRWaAoeT1gsdTnh8n5ikapZZrzjx'
       // const pubKey = 'PUB_K1_7pM9qiBuHWF6WqRSjPTMfVYKV5ZFRavK4PkUq4oFhqi9Z46mWc'
 
@@ -83,7 +84,7 @@ describe('infra-did-resolver', () => {
     })
 
     it('resolves revoked DID document', async () => {
-      const networkId = 'vapptest1'
+      const networkId = 'sentinel'
       const pubKey = 'PUB_K1_7pM9qiBuHWF6WqRSjPTMfVYKV5ZFRavK4PkUq4oFhqi9Z46mWc'
 
       const did = `did:infra:${networkId}:${pubKey}`
@@ -101,7 +102,7 @@ describe('infra-did-resolver', () => {
 
   describe('Account-based DID', () => {
     it('resolves DID document', async () => {
-      const networkId = 'vapptest1'
+      const networkId = 'sentinel'
 
       const did = `did:infra:${networkId}:fmapkumrotfc`
       const didResolveRes: DIDResolutionResult = await didResolver.resolve(did)
