@@ -1,51 +1,55 @@
 import b58 from 'bs58';
-import { ApiPromise, WsProvider } from '@polkadot/api';
+import { ApiPromise, Keyring, WsProvider } from '@polkadot/api';
 import { HttpProvider } from '@polkadot/rpc-provider';
 import { u8aToString, hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress, decodeAddress, } from '@polkadot/util-crypto';
 import typesBundle from '@docknetwork/node-types';
+import { BTreeSet } from '@polkadot/types';
+import { Codec } from '@polkadot/types-codec/types';
 
 
-type HexString = `0x${string}`;
-export const CRYPTO_INFO = {
-    SR25519: {
-        CRYPTO_TYPE: 'sr25519',
-        KEY_TYPE: 'Sr25519VerificationKey2020',
-        SIG_TYPE: 'Sr25519'
-    },
-    ED25519: {
-        CRYPTO_TYPE: 'ed25519',
-        KEY_TYPE: 'Ed25519VerificationKey2018',
-        SIG_TYPE: 'Ed25519'
-    }
-} as const
-export type CRYPTO_INFO = typeof CRYPTO_INFO[keyof typeof CRYPTO_INFO]
-// export type CRYPTO_TYPE = typeof CRYPTO_INFO.ED25519.CRYPTO_TYPE | typeof CRYPTO_INFO.SR25519.CRYPTO_TYPE
-// export type KEY_TYPE = typeof CRYPTO_INFO.ED25519.KEY_TYPE | typeof CRYPTO_INFO.SR25519.KEY_TYPE
-export type SIG_TYPE = typeof CRYPTO_INFO.ED25519.SIG_TYPE | typeof CRYPTO_INFO.SR25519.SIG_TYPE
-
-export class VerificationRelationship {
+class VerificationRelationship {
     constructor(private _value = 0) {}
     get value() { return this._value }
-    setAuthentication() { this._value |= 0b0001 }
-    setAssertion() { this._value |= 0b0010 }
-    setCapabilityInvocation() { this._value |= 0b0100 }
-    setKeyAgreement() { this._value |= 0b1000 }
-    setAllSigning() { this._value |= 0b0111 }
+    setAuthentication() { this._value |= 0b0001 } //1
+    setAssertion() { this._value |= 0b0010 } //2
+    setCapabilityInvocation() { this._value |= 0b0100 } //4
+    setKeyAgreement() { this._value |= 0b1000 }//8
+    setAllSigning() { this._value |= 0b0111 }//7
     isAuthentication() { return !!(this._value & 0b0001) }
     isAssertion() { return !!(this._value & 0b0010) }
     isCapabilityInvocation() { return !!(this._value & 0b0100) }
     isKeyAgreement() { return !!(this._value & 0b1000) }
 }
-export class ServiceEndpointType {
-    constructor(private _value = 0) {}
-    get value() { return this._value }
-    setLinkedDomains() {
-        // eslint-disable-next-line no-bitwise
-        this._value |= 0b0001;
+
+class ExtrinsicError extends Error {
+    constructor(message, private method, private data, private status, private events) {
+        super(message);
+        this.name = 'ExtrinsicError';
+    }
+    static getExtrinsicErrorMsg(data, typeDef, api): string {
+        let errorMsg = 'Extrinsic failed submission:';
+        data.forEach((error) => {
+            if (error.isModule) {
+                try {
+                    const decoded = api.registry.findMetaError(error.asModule);
+                    const { docs, method, section } = decoded;
+                    errorMsg += `\n${section}.${method}: ${docs.join(' ')}`;
+                } catch (e) {
+                    errorMsg += `\nError at module index: ${error.asModule.index} Error: ${error.asModule.error}`;
+                }
+            } else {
+                const errorStr = error.toString();
+                if (errorStr !== '0') {
+                    errorMsg += `\n${errorStr}`;
+                }
+            }
+        });
+        return errorMsg;
     }
 }
-export default class InfraSS58Resolver {
+
+export default class InfraSS58DIDResolver {
     private api;
 
     private address: string;
@@ -54,8 +58,8 @@ export default class InfraSS58Resolver {
     }
 
     private constructor() {}
-    static async createAsync(address: string): Promise<InfraSS58Resolver> {
-        return await new InfraSS58Resolver().init(address)
+    static async createAsync(address: string): Promise<InfraSS58DIDResolver> {
+        return await new InfraSS58DIDResolver().init(address)
     }
     static validateInfraSS58DID(infraSS58DID: string): boolean {
         const didSplit = infraSS58DID.split(':')
@@ -74,15 +78,15 @@ export default class InfraSS58Resolver {
         const splitDID = did.split(':')
         return {
             ss58ID: splitDID.pop(),
-            qualifier: splitDID,
+            qualifier: splitDID.join(':'),
         }
     }
-    private static didToHex(did: string): HexString {
-        const { ss58ID } = InfraSS58Resolver.splitDID(did);
+    private static didToHex(did: string) {
+        const { ss58ID } = InfraSS58DIDResolver.splitDID(did);
         return u8aToHex(decodeAddress(ss58ID));
     }
 
-    private async init(address: string): Promise<InfraSS58Resolver> {
+    private async init(address: string): Promise<InfraSS58DIDResolver> {
         if (this.api) {
             if (this.api.isConnected) {
                 throw new Error('API is already connected');
@@ -107,7 +111,7 @@ export default class InfraSS58Resolver {
         return this
     }
 
-    private async getOnchainDIDDetail(hexDid: HexString): Promise<{
+    private async getOnchainDIDDetail(hexDid): Promise<{
         nonce: number,
         lastKeyId: number,
         activeControllerKeys: number,
@@ -128,8 +132,8 @@ export default class InfraSS58Resolver {
     }
 
     async resolve(did, { getBbsPlusSigKeys = true } = {}) {
-        const hexId = InfraSS58Resolver.didToHex(did);
-        const { qualifier } = InfraSS58Resolver.splitDID(did)
+        const hexId = InfraSS58DIDResolver.didToHex(did);
+        const { qualifier } = InfraSS58DIDResolver.splitDID(did)
         let didDetails = await this.getOnchainDIDDetail(hexId);
         const attests = await this.api.query.attest.attestations(hexId);
         const ATTESTS_IRI = attests.iri.isSome ? u8aToString(hexToU8a(attests.iri.toString())) : null;
@@ -182,28 +186,20 @@ export default class InfraSS58Resolver {
                     let publicKeyRaw;
                     let typ;
                     if (pk.isSr25519) {
-                        typ = CRYPTO_INFO.SR25519.KEY_TYPE;
+                        typ = 'Sr25519VerificationKey2020';
                         publicKeyRaw = pk.asSr25519.value;
                     } else if (pk.isEd25519) {
-                        typ = CRYPTO_INFO.ED25519.KEY_TYPE;
+                        typ = 'Ed25519VerificationKey2018';
                         publicKeyRaw = pk.asEd25519.value;
                     } else {
                         throw new Error(`Cannot parse public key ${pk}`);
                     }
                     keys.push([index, typ, publicKeyRaw]);
                     const vr = new VerificationRelationship(dk.verRels.toNumber());
-                    if (vr.isAuthentication()) {
-                        authn.push(index);
-                    }
-                    if (vr.isAssertion()) {
-                        assertion.push(index);
-                    }
-                    if (vr.isCapabilityInvocation()) {
-                        capInv.push(index);
-                    }
-                    if (vr.isKeyAgreement()) {
-                        keyAgr.push(index);
-                    }
+                    if (vr.isAuthentication()) authn.push(index);
+                    if (vr.isAssertion()) assertion.push(index);
+                    if (vr.isCapabilityInvocation()) capInv.push(index);
+                    if (vr.isKeyAgreement()) keyAgr.push(index);
                 }
             });
         }
@@ -243,9 +239,7 @@ export default class InfraSS58Resolver {
                 }
                 let currentIter = 0;
                 for (const r of resp) {
-                    // The gaps in `keyId` might correspond to removed keys
                     if (r.isSome) {
-                        // Don't care about signature params for now
                         const pkObj = createPublicKeyObjFromChainResponse(r.unwrap());
                         if (pkObj.curveType !== 'Bls12381') {
                             throw new Error(`Curve type should have been Bls12381 but was ${pkObj.curveType}`);
@@ -314,5 +308,91 @@ export default class InfraSS58Resolver {
             delete this.api;
         }
     }
+    async readyTest() {
+        if (this.address !== 'ws://localhost:9944') throw new Error('test function only for localhost:9944')
+        const did = "did:infra:02:5FHF9o59KFv5NCFZ25rqyE4aJ8WGjAfUdpHBVXkQNGHDQ5d2";
+        const didKey = {
+            publicKey: {
+                Ed25519: '0x6bf52713a6da68680bc51097382f6fc4058c2600e7a924169100c93179c1f4ce',
+            },
+            verRels: { _value: 0 }
+        }
+        await this.registerOnChainForTest(did, didKey);
+        return did
+    }
+    async endTest() {
+        if (this.address !== 'ws://localhost:9944') throw new Error('test function only for localhost:9944')
+        const did = "did:infra:02:5FHF9o59KFv5NCFZ25rqyE4aJ8WGjAfUdpHBVXkQNGHDQ5d2";
+        const seed = '0x92395960e119d5d2e68d33d932a7aea00fe316da6d4f2939e417a4c290163e7e'
+        const keypair = (new Keyring({ type: 'ed25519' })).addFromSeed(hexToU8a(seed))
+        await this.unregisterOnChainForTest(did, keypair);
+    }
 
+    private async registerOnChainForTest(did, didKey) {
+        const accountKeyPair = (new Keyring({ type: 'sr25519' })).addFromUri('//Alice');
+        try {
+            const hexId: unknown = InfraSS58DIDResolver.didToHex(did)
+            const didKeys = [didKey];//.map((d) => d.toJSON());
+            const controllers = new BTreeSet(undefined, undefined, undefined)
+            controllers.add(hexId as Codec)
+            const tx = await this.api.tx.didModule.newOnchain(hexId, didKeys, controllers);
+            return this.signAndSend(accountKeyPair, tx, false, {});
+        } catch (e) { throw e }
+    }
+    private async unregisterOnChainForTest(did, keypair) {
+        const accountKeyPair = (new Keyring({ type: 'sr25519' })).addFromUri('//Alice');
+        try {
+            const hexDID = InfraSS58DIDResolver.didToHex(did)
+            const nonce = await this.getOnchainDIDDetail(hexDID).then(res => res.nonce + 1);
+            const DidRemoval = { did: hexDID, nonce };
+            const stateMessage = this.api.createType('StateChange', { DidRemoval }).toU8a();
+            const controllerDIDSig = {
+                did: InfraSS58DIDResolver.didToHex(did),
+                keyId: 1,
+                sig: { Ed25519: u8aToHex(keypair.sign(stateMessage)) }
+            }
+            const tx = await this.api.tx.didModule.removeOnchainDid(DidRemoval, controllerDIDSig);
+            return this.signAndSend(accountKeyPair, tx, false, {});
+        } catch (e) { throw e }
+    }
+
+    private async send(extrinsic, waitForFinalization = true) {
+        const sendPromise = new Promise((resolve, reject) => {
+            try {
+                let unsubFunc = () => {};
+                return extrinsic
+                    .send((extrResult) => {
+                        const { events = [], status } = extrResult;
+                        for (let i = 0; i < events.length; i++) {
+                            const {
+                                event: {
+                                    data, method, typeDef,
+                                },
+                            } = events[i];
+                            if (method === 'ExtrinsicFailed' || method === 'BatchInterrupted') {
+                                const errorMsg = ExtrinsicError.getExtrinsicErrorMsg(data, typeDef, this.api);
+                                const error = new ExtrinsicError(errorMsg, method, data, status, events);
+                                reject(error);
+                                return error;
+                            }
+                        }
+                        if ((waitForFinalization && status.isFinalized) || (!waitForFinalization && status.isInBlock)) {
+                            unsubFunc();
+                            resolve(extrResult);
+                        }
+                        return extrResult;
+                    })
+                    .catch((error) => { reject(error) })
+                    .then((unsub) => { unsubFunc = unsub });
+            } catch (error) { reject(error) }
+            return this;
+        });
+        return await sendPromise;
+    }
+    private async signAndSend(accountKeyPair, extrinsic, waitForFinalization = true, params = {}) {
+        // @ts-ignore
+        params.nonce = await this.api.rpc.system.accountNextIndex(accountKeyPair.address);
+        const signedExtrinsic = await extrinsic.signAsync(accountKeyPair, params)
+        return this.send(signedExtrinsic, waitForFinalization);
+    }
 }

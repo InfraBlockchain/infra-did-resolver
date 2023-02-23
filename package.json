@@ -61,7 +61,7 @@
     "@docknetwork/node-types": "^0.15.0",
     "@polkadot/api": "9.14.1",
     "@polkadot/rpc-provider": "9.14.1",
-    "@polkadot/util-crypto": "10.4.1",
+    "@polkadot/util-crypto": "10.4.2",
     "bs58": "^5.0.0",
     "buffer": "^5.1.0",
     "did-resolver": "^3.0.2",
