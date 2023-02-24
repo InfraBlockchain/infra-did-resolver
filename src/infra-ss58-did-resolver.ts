@@ -1,4 +1,3 @@
-import b58 from 'bs58';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { HttpProvider } from '@polkadot/rpc-provider';
 import { u8aToString, hexToU8a, u8aToHex } from '@polkadot/util';
@@ -107,12 +106,13 @@ export default class InfraSS58DIDResolver {
             '@context': ['https://www.w3.org/ns/did/v1'],
             id: did,
             controller: [did],
-            publicKey: [
+            verificationMethod: [
                 {
                     id: `${did}#keys-1`,
                     type: 'Sr25519VerificationKey2020',
                     controller: did,
-                    publicKeyBase58: b58.encode(decodeAddress(ss58ID))
+                    publicKeyHex: u8aToHex(decodeAddress(ss58ID)).slice(2)
+
                 }
             ],
             authentication: [`${did}#keys-1`,],
@@ -245,7 +245,7 @@ export default class InfraSS58DIDResolver {
             id: `${id}#keys-${index}`,
             type,
             controller: id,
-            publicKeyBase58: b58.encode(publicKeyRaw),
+            publicKeyHex: u8aToHex(publicKeyRaw).slice(2),
         }));
         const assertionMethod = assertion.map((i) => `${id}#keys-${i}`);
         const authentication = authn.map((i) => `${id}#keys-${i}`);
@@ -272,7 +272,7 @@ export default class InfraSS58DIDResolver {
             '@context': ['https://www.w3.org/ns/did/v1'],
             id,
             controller: controllers.map((c) => `${qualifier}${encodeAddress(c)}`),
-            publicKey: verificationMethod,
+            verificationMethod,
             authentication, assertionMethod, keyAgreement, capabilityInvocation,
             ATTESTS_IRI, service,
         };
