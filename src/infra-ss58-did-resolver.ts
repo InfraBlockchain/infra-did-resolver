@@ -50,11 +50,6 @@ export default class InfraSS58DIDResolver {
             qualifier: splitDID.join(':'),
         }
     }
-    private static didToHex(did: string) {
-        const { ss58ID } = InfraSS58DIDResolver.splitDID(did);
-        return u8aToHex(decodeAddress(ss58ID));
-    }
-
     private async init(address: string): Promise<InfraSS58DIDResolver> {
         if (this.api) {
             if (this.api.isConnected) {
