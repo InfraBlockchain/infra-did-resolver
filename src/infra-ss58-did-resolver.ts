@@ -1,11 +1,9 @@
 import b58 from 'bs58';
-import { ApiPromise, Keyring, WsProvider } from '@polkadot/api';
+import { ApiPromise, WsProvider } from '@polkadot/api';
 import { HttpProvider } from '@polkadot/rpc-provider';
 import { u8aToString, hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress, decodeAddress, } from '@polkadot/util-crypto';
 import typesBundle from '@docknetwork/node-types';
-import { BTreeSet } from '@polkadot/types';
-import { Codec } from '@polkadot/types-codec/types';
 
 
 class VerificationRelationship {
@@ -22,33 +20,6 @@ class VerificationRelationship {
     isKeyAgreement() { return !!(this._value & 0b1000) }
 }
 
-class ExtrinsicError extends Error {
-    constructor(message, private method, private data, private status, private events) {
-        super(message);
-        this.name = 'ExtrinsicError';
-    }
-    static getExtrinsicErrorMsg(data, typeDef, api): string {
-        let errorMsg = 'Extrinsic failed submission:';
-        data.forEach((error) => {
-            if (error.isModule) {
-                try {
-                    const decoded = api.registry.findMetaError(error.asModule);
-                    const { docs, method, section } = decoded;
-                    errorMsg += `\n${section}.${method}: ${docs.join(' ')}`;
-                } catch (e) {
-                    errorMsg += `\nError at module index: ${error.asModule.index} Error: ${error.asModule.error}`;
-                }
-            } else {
-                const errorStr = error.toString();
-                if (errorStr !== '0') {
-                    errorMsg += `\n${errorStr}`;
-                }
-            }
-        });
-        return errorMsg;
-    }
-}
-
 export default class InfraSS58DIDResolver {
     private api;
 
@@ -56,7 +27,6 @@ export default class InfraSS58DIDResolver {
     get isConnected(): boolean {
         return this.api && this.api.isConnected || false;
     }
-
     private constructor() {}
     static async createAsync(address: string): Promise<InfraSS58DIDResolver> {
         return await new InfraSS58DIDResolver().init(address)
@@ -131,10 +101,34 @@ export default class InfraSS58DIDResolver {
         } catch (e) { throw e }
     }
 
-    async resolve(did, { getBbsPlusSigKeys = true } = {}) {
-        const hexId = InfraSS58DIDResolver.didToHex(did);
-        const { qualifier } = InfraSS58DIDResolver.splitDID(did)
-        let didDetails = await this.getOnchainDIDDetail(hexId);
+    async resolve(did, getBbsPlusSigKeys = true) {
+        const { ss58ID, qualifier } = InfraSS58DIDResolver.splitDID(did)
+        const offDocuments = (did) => ({
+            '@context': ['https://www.w3.org/ns/did/v1'],
+            id: did,
+            controller: [did],
+            publicKey: [
+                {
+                    id: `${did}#keys-1`,
+                    type: 'Sr25519VerificationKey2020',
+                    controller: did,
+                    publicKeyBase58: b58.encode(decodeAddress(ss58ID))
+                }
+            ],
+            authentication: [`${did}#keys-1`,],
+            assertionMethod: [`${did}#keys-1`,],
+            keyAgreement: [],
+            capabilityInvocation: [`${did}#keys-1`,],
+            ATTESTS_IRI: null,
+            service: []
+        })
+        const hexId = u8aToHex(decodeAddress(ss58ID));
+        let didDetails
+        try {
+            didDetails = await this.getOnchainDIDDetail(hexId);
+        } catch {
+            return offDocuments(did);
+        }
         const attests = await this.api.query.attest.attestations(hexId);
         const ATTESTS_IRI = attests.iri.isSome ? u8aToString(hexToU8a(attests.iri.toString())) : null;
         const id = (did === hexId) ? `${qualifier}${encodeAddress(hexId)}` : did;
@@ -183,8 +177,7 @@ export default class InfraSS58DIDResolver {
                     }
                     const index = i.toNumber();
                     const pk = dk.publicKey;
-                    let publicKeyRaw;
-                    let typ;
+                    let publicKeyRaw, typ;
                     if (pk.isSr25519) {
                         typ = 'Sr25519VerificationKey2020';
                         publicKeyRaw = pk.asSr25519.value;
@@ -204,38 +197,27 @@ export default class InfraSS58DIDResolver {
             });
         }
 
-        if (getBbsPlusSigKeys === true) {
-            const { lastKeyId } = didDetails;
-            if (lastKeyId > keys.length) {
+        if (getBbsPlusSigKeys) {
+            if (didDetails.lastKeyId > keys.length) {
                 const possibleBbsPlusKeyIds = new Set();
-                for (let i = 1; i <= lastKeyId; i++) {
+                for (let i = 1; i <= didDetails.lastKeyId; i++) {
                     possibleBbsPlusKeyIds.add(i);
                 }
                 for (const [i] of keys) {
                     possibleBbsPlusKeyIds.delete(i);
                 }
-
                 const queryKeys: any[] = [];
                 for (const k of possibleBbsPlusKeyIds) {
                     queryKeys.push([hexId, k]);
                 }
                 const resp = await this.api.query.bbsPlus.bbsPlusKeys.multi(queryKeys);
                 function createPublicKeyObjFromChainResponse(pk) {
-                    const pkObj: any = {
+                    const pr = (pk.paramsRef.isSome) ? pk.paramsRef.unwrap() : null
+                    return {
                         bytes: u8aToHex(pk.bytes),
-                        curveType: null,
-                        paramsRef: null,
+                        curveType: pk.curveType.isBls12381 ? 'Bls12381' : null,
+                        paramsRef: pr ? [u8aToHex(pr[0]), pr[1].toNumber()] : null,
                     };
-                    if (pk.curveType.isBls12381) {
-                        pkObj.curveType = 'Bls12381';
-                    }
-                    if (pk.paramsRef.isSome) {
-                        const pr = pk.paramsRef.unwrap();
-                        pkObj.paramsRef = [u8aToHex(pr[0]), pr[1].toNumber()];
-                    } else {
-                        pkObj.paramsRef = null;
-                    }
-                    return pkObj;
                 }
                 let currentIter = 0;
                 for (const r of resp) {
@@ -259,9 +241,9 @@ export default class InfraSS58DIDResolver {
         capInv.sort();
         keyAgr.sort();
 
-        const verificationMethod = keys.map(([index, typ, publicKeyRaw]) => ({
+        const verificationMethod = keys.map(([index, type, publicKeyRaw]) => ({
             id: `${id}#keys-${index}`,
-            type: typ,
+            type,
             controller: id,
             publicKeyBase58: b58.encode(publicKeyRaw),
         }));
@@ -291,12 +273,8 @@ export default class InfraSS58DIDResolver {
             id,
             controller: controllers.map((c) => `${qualifier}${encodeAddress(c)}`),
             publicKey: verificationMethod,
-            authentication,
-            assertionMethod,
-            keyAgreement,
-            capabilityInvocation,
-            ATTESTS_IRI,
-            service,
+            authentication, assertionMethod, keyAgreement, capabilityInvocation,
+            ATTESTS_IRI, service,
         };
     }
 
@@ -307,92 +285,5 @@ export default class InfraSS58DIDResolver {
             }
             delete this.api;
         }
-    }
-    async readyTest() {
-        if (this.address !== 'ws://localhost:9944') throw new Error('test function only for localhost:9944')
-        const did = "did:infra:02:5FHF9o59KFv5NCFZ25rqyE4aJ8WGjAfUdpHBVXkQNGHDQ5d2";
-        const didKey = {
-            publicKey: {
-                Ed25519: '0x6bf52713a6da68680bc51097382f6fc4058c2600e7a924169100c93179c1f4ce',
-            },
-            verRels: { _value: 0 }
-        }
-        await this.registerOnChainForTest(did, didKey);
-        return did
-    }
-    async endTest() {
-        if (this.address !== 'ws://localhost:9944') throw new Error('test function only for localhost:9944')
-        const did = "did:infra:02:5FHF9o59KFv5NCFZ25rqyE4aJ8WGjAfUdpHBVXkQNGHDQ5d2";
-        const seed = '0x92395960e119d5d2e68d33d932a7aea00fe316da6d4f2939e417a4c290163e7e'
-        const keypair = (new Keyring({ type: 'ed25519' })).addFromSeed(hexToU8a(seed))
-        await this.unregisterOnChainForTest(did, keypair);
-    }
-
-    private async registerOnChainForTest(did, didKey) {
-        const accountKeyPair = (new Keyring({ type: 'sr25519' })).addFromUri('//Alice');
-        try {
-            const hexId: unknown = InfraSS58DIDResolver.didToHex(did)
-            const didKeys = [didKey];//.map((d) => d.toJSON());
-            const controllers = new BTreeSet(undefined, undefined, undefined)
-            controllers.add(hexId as Codec)
-            const tx = await this.api.tx.didModule.newOnchain(hexId, didKeys, controllers);
-            return this.signAndSend(accountKeyPair, tx, false, {});
-        } catch (e) { throw e }
-    }
-    private async unregisterOnChainForTest(did, keypair) {
-        const accountKeyPair = (new Keyring({ type: 'sr25519' })).addFromUri('//Alice');
-        try {
-            const hexDID = InfraSS58DIDResolver.didToHex(did)
-            const nonce = await this.getOnchainDIDDetail(hexDID).then(res => res.nonce + 1);
-            const DidRemoval = { did: hexDID, nonce };
-            const stateMessage = this.api.createType('StateChange', { DidRemoval }).toU8a();
-            const controllerDIDSig = {
-                did: InfraSS58DIDResolver.didToHex(did),
-                keyId: 1,
-                sig: { Ed25519: u8aToHex(keypair.sign(stateMessage)) }
-            }
-            const tx = await this.api.tx.didModule.removeOnchainDid(DidRemoval, controllerDIDSig);
-            return this.signAndSend(accountKeyPair, tx, false, {});
-        } catch (e) { throw e }
-    }
-
-    private async send(extrinsic, waitForFinalization = true) {
-        const sendPromise = new Promise((resolve, reject) => {
-            try {
-                let unsubFunc = () => {};
-                return extrinsic
-                    .send((extrResult) => {
-                        const { events = [], status } = extrResult;
-                        for (let i = 0; i < events.length; i++) {
-                            const {
-                                event: {
-                                    data, method, typeDef,
-                                },
-                            } = events[i];
-                            if (method === 'ExtrinsicFailed' || method === 'BatchInterrupted') {
-                                const errorMsg = ExtrinsicError.getExtrinsicErrorMsg(data, typeDef, this.api);
-                                const error = new ExtrinsicError(errorMsg, method, data, status, events);
-                                reject(error);
-                                return error;
-                            }
-                        }
-                        if ((waitForFinalization && status.isFinalized) || (!waitForFinalization && status.isInBlock)) {
-                            unsubFunc();
-                            resolve(extrResult);
-                        }
-                        return extrResult;
-                    })
-                    .catch((error) => { reject(error) })
-                    .then((unsub) => { unsubFunc = unsub });
-            } catch (error) { reject(error) }
-            return this;
-        });
-        return await sendPromise;
-    }
-    private async signAndSend(accountKeyPair, extrinsic, waitForFinalization = true, params = {}) {
-        // @ts-ignore
-        params.nonce = await this.api.rpc.system.accountNextIndex(accountKeyPair.address);
-        const signedExtrinsic = await extrinsic.signAsync(accountKeyPair, params)
-        return this.send(signedExtrinsic, waitForFinalization);
     }
 }
