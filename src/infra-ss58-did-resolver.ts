@@ -3,7 +3,7 @@ import { HttpProvider } from '@polkadot/rpc-provider';
 import { u8aToString, hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress, decodeAddress, } from '@polkadot/util-crypto';
 import typesBundle from '@docknetwork/node-types';
-
+import b58 from 'bs58';
 
 class VerificationRelationship {
     constructor(private _value = 0) {}
@@ -106,6 +106,7 @@ export default class InfraSS58DIDResolver {
                     id: `${did}#keys-1`,
                     type: 'Sr25519VerificationKey2020',
                     controller: did,
+                    publicKeyBase58: b58.encode(decodeAddress(ss58ID)),
                     publicKeyHex: u8aToHex(decodeAddress(ss58ID)).slice(2)
 
                 }
@@ -241,6 +242,7 @@ export default class InfraSS58DIDResolver {
             type,
             controller: id,
             publicKeyHex: u8aToHex(publicKeyRaw).slice(2),
+            publicKeyBase58: b58.encode(publicKeyRaw),
         }));
         const assertionMethod = assertion.map((i) => `${id}#keys-${i}`);
         const authentication = authn.map((i) => `${id}#keys-${i}`);
